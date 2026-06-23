@@ -7,7 +7,7 @@ Controlling a Chrome browser running on a remote Windows host from Linux via Win
 ```
 Linux (41030 / this machine)
   │
-  ├── pywinrm (NTLM auth) ──► WinRM HTTP :5985 ──► Windows VPS 26429 (100.117.164.91)
+  ├── pywinrm (NTLM auth) ──► WinRM HTTP :5985 ──► Windows VPS <your-windows-host> (<windows-tailscale-ip>)
   │                                                    │
   │                  ┌──────────────────────────────────┤
   │                  │          │                       │
@@ -19,9 +19,9 @@ Linux (41030 / this machine)
       (via tunnel or local WS client on Windows)
 ```
 
-**Credentials:** `/root/2604/26429` (also mirrored to `/root/.hermes/scripts/.winrm_creds` for actors pipeline)
-- `host=100.117.164.91`
-- `user=winrm_user`
+**Credentials:** `$CASHFLOW_PROJECT/<your-windows-host>` (also mirrored to `$WINRM_CREDENTIALS` for actors pipeline)
+- `host=<windows-tailscale-ip>`
+- `user=<windows-username>`
 - `pass=<strong-password>`
 - Transport: `ntlm`
 
@@ -45,10 +45,10 @@ print(result.std_out.decode())
 
 **NTLM is required.** Basic auth fails on this host. Always use `transport='ntlm'` and prefix the username with `.\\`.
 
-A helper script exists at `/root/2604/win/winrm_ps.py` — pipe PowerShell to it from stdin:
+A helper script exists at `$CASHFLOW_PROJECT/win/winrm_ps.py` — pipe PowerShell to it from stdin:
 
 ```bash
-echo 'Get-Process chrome | Format-Table Id, ProcessName' | python3 /root/2604/win/winrm_ps.py
+echo 'Get-Process chrome | Format-Table Id, ProcessName' | python3 $CASHFLOW_PROJECT/win/winrm_ps.py
 ```
 
 ---
@@ -142,7 +142,7 @@ netsh advfirewall firewall add rule name="CDP 9250" dir=in action=allow protocol
 Then set in `config.yaml`:
 ```yaml
 browser:
-  cdp_url: 'ws://100.117.164.91:9250/devtools/browser/<uuid>'
+  cdp_url: 'ws://<windows-tailscale-ip>:9250/devtools/browser/<uuid>'
 ```
 
 **Clean up:**
@@ -184,10 +184,10 @@ OpenCLI creates a Browser Bridge profile per Chrome instance. When multiple Chro
 # List profiles
 opencli profile list
 # → vwncsxtf  connected  — Google Chrome
-# → stable_profile  connected  — Google Chrome (stable)
+# → <chrome-profile-id>  connected  — Google Chrome (stable)
 
 # Set active (per session — must combine with command in WinRM)
-opencli profile use stable_profile 2>$null; opencli twitter tweets marclou --limit 5
+opencli profile use <chrome-profile-id> 2>$null; opencli twitter tweets marclou --limit 5
 ```
 
 **Important for WinRM:** Each `run_ps()` call is a fresh PowerShell session. Always combine `profile use` and the command in one string.
@@ -200,7 +200,7 @@ Instead of hardcoding a profile ID, detect it dynamically:
 opencli profile list 2>&1 | Select-String "connected" | ForEach-Object { $_.ToString().Split()[0] }
 ```
 
-The actors pipeline does this in `/root/2604/pipeline/collect_signals.py` (`detect_x_profile()`).
+The actors pipeline does this in `$CASHFLOW_PROJECT/pipeline/collect_signals.py` (`detect_x_profile()`).
 
 ---
 
@@ -328,12 +328,12 @@ proc.terminate()
 
 | File | Purpose |
 |------|---------|
-| `/root/2604/win/winrm_ps.py` | Pipe PowerShell from stdin → execute via WinRM |
-| `/root/2604/win/enable_cdp_no_clipboard.py` | Enable CDP via UIA on running Chrome (no clipboard) |
-| `/root/2604/win/refresh_chrome_policy.py` | Refresh Chrome policy via SendKeys |
-| `/root/2604/pipeline/collect_signals.py` | Reddit + X signal collection (uses OpenCLI via WinRM) |
-| `/root/2604/win/chrome-cdp-live-session.md` | Legacy CDP notes |
-| `/root/2604/win/26429.md` | Windows host general documentation |
+| `$CASHFLOW_PROJECT/win/winrm_ps.py` | Pipe PowerShell from stdin → execute via WinRM |
+| `$CASHFLOW_PROJECT/win/enable_cdp_no_clipboard.py` | Enable CDP via UIA on running Chrome (no clipboard) |
+| `$CASHFLOW_PROJECT/win/refresh_chrome_policy.py` | Refresh Chrome policy via SendKeys |
+| `$CASHFLOW_PROJECT/pipeline/collect_signals.py` | Reddit + X signal collection (uses OpenCLI via WinRM) |
+| `$CASHFLOW_PROJECT/win/chrome-cdp-live-session.md` | Legacy CDP notes |
+| `$CASHFLOW_PROJECT/win/<your-windows-host>.md` | Windows host general documentation |
 | `references/cdp-ws-scraper.py` | CDP WebSocket scraper for X profile timeline |
 | `references/cdp-ws-search-scraper.py` | CDP WebSocket scraper for X search results |
 
@@ -342,7 +342,7 @@ proc.terminate()
 ## Decision Flow
 
 ```
-Need to control Chrome on 26429?
+Need to control Chrome on <your-windows-host>?
 │
 ├── Need X login cookies?
 │   ├── Yes → Use OpenCLI [cookie] strategy (tweets, profile, web read)

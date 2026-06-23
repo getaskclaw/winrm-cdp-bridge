@@ -80,14 +80,16 @@ Linux host (your machine)
 
 1. **Prerequisites on Linux:** `pywinrm`, `requests_ntlm`, Tailscale connected to the Windows host.
 2. **Prerequisites on Windows:** Chrome (stable + Canary recommended), Python 3.12+ with `websockets`, OpenCLI (optional).
-3. **Credentials:** Create a credential file with host/user/pass (see `docs/26429.md` for format). Never commit this file.
+3. **Credentials:** Set `$WINRM_CREDENTIALS` to your credentials file path, or pass `--credentials` to each script. See `.credentials.example` for format. Never commit real credentials.
 4. **Test WinRM:**
    ```python
    import winrm
+   # Use HTTPS (5986) with certificate pinning in production, not HTTP
    sess = winrm.Session("http://<tailscale-ip>:5985/wsman", auth=("user", "pass"), transport='ntlm')
    r = sess.run_ps("hostname")
    print(r.std_out)
    ```
+   **WinRM security:** HTTP (5985) sends credentials and commands in cleartext. For production, use HTTPS (5986) with a pinned certificate and a non-admin service account. Do not set `LocalAccountTokenFilterPolicy=1` — prefer UAC elevation per-operation.
 
 ## What we learned (30+ documented pitfalls)
 

@@ -6,14 +6,14 @@ Controlling a Chrome browser running on a remote Windows host from Linux via Win
 
 Linux (41030 / this machine)
   │
-  ├── pywinrm (NTLM auth) ──► WinRM HTTP :5985 ──► Windows VPS (100.117.164.91)
+  ├── pywinrm (NTLM auth) ──► WinRM HTTP :5985 ──► Windows VPS (<windows-tailscale-ip>)
   │                                                    │
   │                  ┌──────────────────────────────────┤
   │                  ▼                                  ▼
   │           Chrome Stable                      Chrome Canary / OpenCLI
   │           (logged-in X)                      (CDP / cookie strategy)
 
-Credentials file: `/root/2604/26429` (format: `host=`, `user=`, `pass=`, transport: NTLM).
+Credentials file: `$WINRM_CREDENTIALS` (format: `host=`, `user=`, `pass=`, transport: NTLM).
 
 ## Connection
 

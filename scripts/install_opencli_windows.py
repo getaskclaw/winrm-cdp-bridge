@@ -3,7 +3,7 @@ import winrm, sys
 
 def get_session():
     data={}
-    for line in Path('/root/2604/26429').read_text().splitlines():
+    for line in Path(os.environ['WINRM_CREDENTIALS']).read_text().splitlines():
         line=line.strip()
         if not line or line.startswith('#'): continue
         if '=' in line: k,v=line.split('=',1)

@@ -1,7 +1,7 @@
 from pathlib import Path
 import base64, winrm
 creds={}
-for line in Path('/root/2604/26429').read_text().splitlines():
+for line in Path(os.environ['WINRM_CREDENTIALS']).read_text().splitlines():
     if '=' in line:
         k,v=line.split('=',1); creds[k.strip()]=v.strip()
 s=winrm.Session('http://' + creds['host'] + ':5985/wsman', auth=(creds['user'],creds['pass']), transport='ntlm', server_cert_validation='ignore')

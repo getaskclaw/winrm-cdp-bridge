@@ -1,5 +1,20 @@
 #!/usr/bin/env python3
 """
+
+⚠️  WARNING: This script uses UI Automation with SendKeys/Clipboard.
+This can interfere with the user's active desktop — keystrokes may go
+to the wrong window, clipboard content will be overwritten.
+
+Prefer CDP WebSocket approach (scripts/cdp-ws-*.py) which operates
+in the background without disrupting the user.
+
+If UIA is the only option:
+- Validate the target window handle before every input.
+- Restore clipboard content after the operation.
+- Never assume window focus is stable.
+"""
+
+"""
 Template runner for x-live-profile-timeline-collector.
 
 This is intentionally a template, not a polished universal scraper. Fill the CONFIG

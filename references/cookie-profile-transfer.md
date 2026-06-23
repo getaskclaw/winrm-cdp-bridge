@@ -1,91 +1,41 @@
-# Cookie-Only Profile Transfer for Chrome Login
+# Cookie-only profile transfer
 
-## When to use this
+**⚠️ WARNING: This document describes a dangerous pattern. Do not follow it in production.**
 
-You need a Chrome instance with an existing login session (e.g. X.com) but:
-- You can't attach CDP to the running Chrome (OpenCLI bridge, no `--remote-debugging-port`)
-- You can't ask the user to log in again (they're busy, or it's a headless/server setup)
-- A full profile clone (robocopy of everything) fails on relaunch (see `chrome-148-cdp-profile-clone.md`)
-- The existing Chrome has the session and you want to duplicate it
+Transferring Chrome cookies between profiles or machines creates session hijacking risk. Instead, use a **fresh profile and have the user log in manually** — this preserves DPAPI encryption and leaves no residual credential material in accessible locations.
 
-## The approach
+## Safe alternative (preferred)
 
-Chrome stores encrypted cookies in **two files** that together form the login session:
+1. Launch Chrome with a fresh temp profile and `--remote-debugging-port`:
+   ```powershell
+   & "C:\Program Files\Google\Chrome\Application\chrome.exe" `
+     --remote-debugging-address=127.0.0.1 `
+     --remote-debugging-port=9250 `
+     --user-data-dir="C:\Temp\chrome_scrape_$(Get-Random)" `
+     --no-first-run --no-default-browser-check `
+     --new-window https://x.com/login
+   ```
+2. A Chrome window appears on the user's desktop. **Ask the user to log into X manually.**
+3. Run the WebSocket scraper against the live session.
+4. **Do not kill Chrome** — the session cookies live in the process memory and the encrypted cookie store. Killing Chrome destroys the DPAPI session key.
+5. When the scrape completes, close Chrome normally. Delete the temp profile directory.
 
-| File | Path (Chrome 148+) | Purpose |
-|------|-------------------|---------|
-| `Local State` | `User Data/Local State` | Contains the DPAPI-encrypted AES key for cookie decryption |
-| `Network/Cookies` | `User Data/Default/Network/Cookies` | The actual cookie database (SQLite) |
+## Why this is safer
 
-Copying **both files** from a logged-in Chrome profile to a new profile directory allows the new Chrome to decrypt and use the existing session cookies — because DPAPI works on the same Windows machine and same user account.
+| Approach | Risk |
+|---|---|
+| Fresh profile + user log in | ✅ No credential material written to accessible paths. Cookie encryption key is process-bound. |
+| Clone full profile | ❌ DPAPI encryption path changes — old cookies can't be decrypted. Can't relaunch CDP after Chrome kill. |
+| Copy Cookies DB to Public | ❌ **Session hijacking.** Any user/service on the machine can read cookies. Chrome key may also be accessible. |
+| Copy Cookies + Local State | ❌ Machine/user-bound DPAPI may not re-decrypt on a different machine or user account. |
 
-**Why it works:** Chrome encrypts the cookie AES key using Windows DPAPI (Data Protection API), which is bound to the machine + user identity, NOT the profile directory path. As long as the same Windows user runs both Chrome instances on the same machine, the DPAPI decryption succeeds regardless of `--user-data-dir`.
+## If you absolutely must transfer (not recommended)
 
-**Why earlier attempts failed:** 
-1. Chrome 148 moved cookies from `User Data/Default/Cookies` to `User Data/Default/Network/Cookies` — copying the old path gets nothing
-2. Not copying `Local State` means the new Chrome has no encryption key
-3. The full-clone approach (robocopy of everything) fails on relaunch because Chrome detects profile corruption from the cloned Crashpad/BrowserMetrics/temp files, not because of cookie issues
+- **Never** write to `C:\Users\Public\` — use a private ACL'd directory under the user's `%TEMP%` or `%APPDATA%`.
+- The destination directory must not be readable by other users or services.
+- Destroy the transferred files immediately after use.
+- This still won't survive a Chrome restart — so a fresh profile + manual login is always better.
 
-## Procedure (PowerShell via WinRM)
+## The hard problem
 
-```powershell
-# 1. Create a fresh profile root
-New-Item -ItemType Directory -Force -Path "C:\Users\Public\chrome-transfer\User Data\Default"
-
-# 2. Copy Local State (contains the DPAPI-encrypted AES key)
-Copy-Item "C:\Users\Administrator\AppData\Local\Google\Chrome\User Data\Local State" `
-  "C:\Users\Public\chrome-transfer\User Data\Local State" -Force
-
-# 3. Copy the cookie database (Chrome 148+ stores in Network subdirectory)
-if (Test-Path "C:\Users\Administrator\AppData\Local\Google\Chrome\User Data\Default\Network\Cookies") {
-    New-Item -ItemType Directory -Force -Path "C:\Users\Public\chrome-transfer\User Data\Default\Network"
-    Copy-Item "C:\Users\Administrator\AppData\Local\Google\Chrome\User Data\Default\Network\Cookies" `
-      "C:\Users\Public\chrome-transfer\User Data\Default\Network\Cookies" -Force
-} else {
-    # Legacy path (pre-Chrome 148)
-    Copy-Item "C:\Users\Administrator\AppData\Local\Google\Chrome\User Data\Default\Cookies" `
-      "C:\Users\Public\chrome-transfer\User Data\Default\Cookies" -Force
-}
-
-# 4. Copy Login Data (optional — some sites store auth tokens here)
-Copy-Item "C:\Users\Administrator\AppData\Local\Google\Chrome\User Data\Default\Login Data" `
-  "C:\Users\Public\chrome-transfer\User Data\Default\Login Data" -Force -ErrorAction SilentlyContinue
-```
-
-## Launching the cookie-transferred Chrome
-
-```powershell
-$Chrome = "C:\Program Files\Google\Chrome\Application\chrome.exe"
-$Args = '--remote-debugging-address=127.0.0.1 --remote-debugging-port=9250 --user-data-dir="C:\Users\Public\chrome-transfer\User Data" --no-first-run --no-default-browser-check --new-window about:blank'
-Start-Process -FilePath $Chrome -ArgumentList $Args
-```
-
-**⚠️ Chrome 148 process merging:** If a Chrome instance is ALREADY running with the same binary, launching a new one with `Start-Process` may route the request to the existing process instead of creating a new one. This happens because Chrome's desktop launch protocol on Windows sends the command-line args to the existing process.
-
-**Workarounds:**
-- **Copy to a genuinely different `--user-data-dir`** — a directory Chrome has never used before. The mutex key is derived from the user-data-dir path, so a truly unique path should force a new process. If it still merges, the existing Chrome is intercepting ALL chrome.exe launches regardless (Chrome 148 behavior). In that case:
-  - **Stop the existing Chrome's desktop-launch handler** — kill the existing Chrome process (if safe)
-  - **Use Invoke-Expression** instead of Start-Process (sometimes helps)
-  - **Use Chrome Canary** — different binary, no process merging at all
-
-## Verification
-
-After launching, verify the session transferred:
-
-```powershell
-# Via .NET HttpClient (works where curl returns empty on Chrome 148)
-Add-Type -AssemblyName System.Net.Http
-$client = New-Object System.Net.Http.HttpClient
-$resp = $client.GetAsync("http://127.0.0.1:9250/json/list").Result
-$content = $resp.Content.ReadAsStringAsync().Result
-# Check for the X page to verify login-state
-```
-
-For X.com, check if `[data-testid="SideNav_AccountSwitcher_Button"]` exists in the DOM via CDP Runtime.evaluate.
-
-## Limitations
-
-- **Does NOT survive Chrome restart.** If you kill the transferred-profile Chrome and relaunch, Chrome re-derives the encryption key and can't decrypt old cookies again. This is the same limitation as full-clone profiles.
-- **Works for same-machine-only.** DPAPI keys don't transfer between machines.
-- **Requires the same Windows user** (the user whose DPAPI encrypted the Local State key).
-- **Chrome 148+ only tested.** Older Chrome versions may use different cookie file paths.
+Chrome's DPAPI encryption key is derived from the profile directory path + Windows user SID + machine secret. When you clone a profile to a new path, the old cookies exist in the SQLite file but cannot be decrypted — Chrome generates a new key at the new path. **No file-copy approach works for Chrome 148+.** Use fresh profile + user login.
