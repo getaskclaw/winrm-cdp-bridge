@@ -1,0 +1,4 @@
+.credentials
+*.db
+__pycache__/
+*.pyc
