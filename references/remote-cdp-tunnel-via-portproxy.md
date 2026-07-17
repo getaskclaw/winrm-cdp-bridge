@@ -8,11 +8,11 @@ Tunnel a remote Chrome CDP endpoint to your Hermes browser tools.
 Chrome's DevTools Protocol gives full control over the browser — execute JS, read pages, manipulate login sessions, steal cookies. Any peer that can reach the CDP port can take over the browser.
 
 **Required mitigations:**
-- Bind the portproxy to the **agent's Tailscale IP only**: `listenaddress=<agent-ts-ip>`
-- Restrict the firewall rule to **the agent's Tailscale IP only**: `remoteip=<agent-ts-ip>`
+- Bind the portproxy to the **Windows host's Tailscale IP**: `listenaddress=<windows-ts-ip>`
+- Restrict the firewall rule to the **controller/agent's Tailscale IP**: `remoteip=<agent-ts-ip>`
 - **Never** use `listenaddress=*` or omit `remoteip`.
 - Clean up the portproxy and firewall rule immediately after the session.
-- Prefer SSH local port forwarding or a Tailscale funnel over netsh portproxy.
+- Prefer SSH local port forwarding or another tailnet-only tunnel over netsh portproxy. Do not use Tailscale Funnel: Funnel publishes the service to the public internet.
 
 ## Flow
 
@@ -32,18 +32,19 @@ Chrome's DevTools Protocol gives full control over the browser — execute JS, r
 
    Extract `webSocketDebuggerUrl` from the response — you'll need the browser UUID.
 
-3. **Tunnel via netsh portproxy** — scoped to the agent's Tailscale IP:
+3. **Tunnel via netsh portproxy** — listen only on the Windows Tailscale address and accept only the controller:
 
    ```powershell
-   $agentIp = "<agent-tailscale-ip>"  # e.g. 100.x.x.x
+   $windowsIp = "<windows-tailscale-ip>"  # local address on this Windows host
+   $agentIp = "<agent-tailscale-ip>"      # remote controller allowed to connect
 
    netsh interface portproxy add v4tov4 `
-     listenaddress=$agentIp listenport=<ext-port> `
+     listenaddress=$windowsIp listenport=<ext-port> `
      connectaddress=127.0.0.1 connectport=<cdp-port>
 
    netsh advfirewall firewall add rule name="CDP <ext-port>" `
      dir=in action=allow protocol=TCP `
-     localport=<ext-port> remoteip=$agentIp
+     localip=$windowsIp localport=<ext-port> remoteip=$agentIp
    ```
 
 4. **Wire Hermes browser tools** in config.yaml:
@@ -58,7 +59,7 @@ Chrome's DevTools Protocol gives full control over the browser — execute JS, r
 6. **Clean up immediately when done:**
 
    ```powershell
-   netsh interface portproxy delete v4tov4 listenaddress=$agentIp listenport=<ext-port>
+   netsh interface portproxy delete v4tov4 listenaddress=$windowsIp listenport=<ext-port>
    netsh advfirewall firewall delete rule name="CDP <ext-port>"
    ```
 
